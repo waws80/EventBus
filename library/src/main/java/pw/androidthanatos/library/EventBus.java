@@ -23,7 +23,7 @@ public class EventBus {
     /**
      * 事件缓存
      */
-    private Map<Object , List<SubscribeMethod>> mCacheMap;
+    private Map<Object , List<SubscribeInfo>> mCacheMap;
 
     /**
      * 将事件发送到主线程
@@ -47,9 +47,7 @@ public class EventBus {
      * 使用静态内部类获取EventBus实例
      * @return 返回EventBus实例
      */
-    public static EventBus getDefault(){
-        return EventBusHolder.EVENT_BUS;
-    }
+    public static EventBus getDefault(){return EventBusHolder.EVENT_BUS;}
 
     private static class EventBusHolder{
         private static final EventBus EVENT_BUS=new EventBus();
@@ -60,9 +58,9 @@ public class EventBus {
      * @param target 目标类
      */
     public void register(Object target){
-        List<SubscribeMethod> list= mCacheMap.get(target);
+        List<SubscribeInfo> list= mCacheMap.get(target);
         if (list==null){
-            List<SubscribeMethod> subscribeMethods=findSubscribeMethodList(target);
+            List<SubscribeInfo> subscribeMethods=findSubscribeMethodList(target);
             mCacheMap.put(target,subscribeMethods);
         }
 
@@ -74,56 +72,56 @@ public class EventBus {
      * @param target 目标类
      * @return 集合
      */
-    private List<SubscribeMethod> findSubscribeMethodList(Object target)  {
-        /**
+    private List<SubscribeInfo> findSubscribeMethodList(Object target)  {
+        /*
          * 为了线程安全  使用 CopyOnWriteArrayList
          */
-        List<SubscribeMethod> list=new CopyOnWriteArrayList<>();
+        List<SubscribeInfo> list=new CopyOnWriteArrayList<>();
 
         Class<?> clazz= target.getClass();
         Method[] methods = clazz.getDeclaredMethods();
 
         while (clazz!=null){
-            /**
+            /*
              * 判断当前类是否为系统类
              */
             String name = clazz.getName();
             if (name.startsWith("java.")|| name.startsWith("javax.")|| name.startsWith("android.")){
                 break;
             }
-            /**
+            /*
              * 获取当前类的所有方法
              */
 
 
             for (Method method:methods) {
                 Subscribe annotation = method.getAnnotation(Subscribe.class);
-                /**
+                /*
                  * 遍历当前方法是否有 Subscribe 注解 ，如果没有则跳出本次循环
                  */
                 if (annotation==null){
                     continue;
                 }
-                /**
+                /*
                  * 获取方法的参数长度
                  */
                 int parameterlength = method.getParameterTypes().length;
-                /**
+                /*
                  * 当参数只有一个的时候才是合法的订阅者
                  */
                 if (parameterlength==1){
-                    /**
+                    /*
                      * 如果是合法的参数则拿到其参数类型
                      */
                     Class<?> targetType = method.getParameterTypes()[0];
-                    /**
-                     * 将订阅者的信息保存到 SubscribeMethod 对象中
+                    /*
+                     * 将订阅者的信息保存到 SubscribeInfo 对象中
                      */
                     ThreadMode targetThread=annotation.value();
-                    SubscribeMethod subscribeMethod=new SubscribeMethod(method,targetThread,targetType);
-                    list.add(subscribeMethod);
+                    SubscribeInfo info=new SubscribeInfo(method,targetThread,targetType);
+                    list.add(info);
                 }
-                /**
+                /*
                  * 当参数个数大于一个的时候抛出异常
                  */
                 else {
@@ -132,7 +130,7 @@ public class EventBus {
                 }
             }
 
-            /**
+            /*
              * 当前类的父类
              */
             clazz = clazz.getSuperclass();
@@ -147,8 +145,8 @@ public class EventBus {
      * @param target  目标类
      */
     public void unRegister(Object target){
-        List<SubscribeMethod> list= mCacheMap.get(target);
-        /**
+        List<SubscribeInfo> list= mCacheMap.get(target);
+        /*
          * 如果目标类有订阅者，则清除掉所有的订阅者
          */
         if (list!=null){
@@ -158,7 +156,7 @@ public class EventBus {
         }else {
             Log.w("thanatos", "unRegister: "+target+" was not registered" );
         }
-        /**
+        /*
          * 将目标类从事件缓存中清除掉
          */
         mCacheMap.remove(target);
@@ -174,22 +172,16 @@ public class EventBus {
     public void post(final Object targetType){
 
         for (final Object target : mCacheMap.keySet()) {
-            /**
+            /*
              * 缓存里面的目标类的订阅者集合
              */
-            List<SubscribeMethod> list = mCacheMap.get(target);
+            List<SubscribeInfo> infoList = mCacheMap.get(target);
 
-            for (final SubscribeMethod subscribeMethod : list) {
-                /**
-                 * 如果目标类和缓存中的订阅者类相同，即表示找到了订阅者
-                 */
-                if (subscribeMethod.getSubscribeType().isAssignableFrom(targetType.getClass())) {
-
-                    postToSubscribe(subscribeMethod,target,targetType);
-
-                }
-
-            }
+            /*
+             * 如果目标类和缓存中的订阅者类相同，即表示找到了订阅者
+             */
+            infoList.stream().filter(info -> info.getSubscribeType().isAssignableFrom(targetType.getClass())).forEach
+                    (info ->  postToSubscribe(info, target, targetType));
 
         }
 
@@ -197,57 +189,47 @@ public class EventBus {
 
     /**
      * 将事件发送给订阅者
-     * @param subscribeMethod  订阅者信息
+     * @param info  订阅者信息
      * @param target  订阅者的目标类
      * @param targetType  订阅者的事件类型
      */
-    private void postToSubscribe(final SubscribeMethod subscribeMethod, final Object target, final Object targetType) {
+    private void postToSubscribe(final SubscribeInfo info, final Object target, final Object targetType) {
 
-        switch (subscribeMethod.getThreadMode()) {
+        switch (info.getThreadMode()) {
             case POST_THREAD:
-                /**
+                /*
                  * 订阅者和发送事件的线程同步
                  */
-                invoke(subscribeMethod, target, targetType);
+                invoke(info, target, targetType);
                 break;
             case MAIN:
-                /**
+                /*
                  * 当前订阅者的线程为主线程，直接发送事件
                  */
                 if (Looper.myLooper() == Looper.getMainLooper()) {
-                    invoke(subscribeMethod, target, targetType);
+                    invoke(info, target, targetType);
                 }
-                /**
+                /*
                  * 发送事件的线程不是主线程，切换线程
                  */
                 else {
-                    mHandler.post(new Runnable() {
-                        @Override
-                        public void run() {
-                            invoke(subscribeMethod, target, targetType);
-                        }
-                    });
+                    mHandler.post(()-> invoke(info, target, targetType));
                 }
 
                 break;
             case BACKGROUND_THREAD:
-                /**
+                /*
                  * 订阅者的线程不是主线程
                  */
                 if (Looper.myLooper() != Looper.getMainLooper()) {
-                    invoke(subscribeMethod, target, targetType);
+                    invoke(info, target, targetType);
                 }
-                /**
+                /*
                  * 订阅者的线程为主线程，切换线程
                  */
 
                 else {
-                    mThreadPool.execute(new Runnable() {
-                        @Override
-                        public void run() {
-                            invoke(subscribeMethod, target, targetType);
-                        }
-                    });
+                    mThreadPool.execute(()->invoke(info, target, targetType));
                 }
                 break;
         }
@@ -261,9 +243,9 @@ public class EventBus {
      * @param targetType 事件类型
      */
     @SuppressWarnings("ALL")
-    private void invoke(SubscribeMethod subscribeMethod, Object target, Object targetType) {
+    private void invoke(SubscribeInfo info, Object target, Object targetType) {
         try {
-            Method method = subscribeMethod.getMethod();
+            Method method = info.getMethod();
             method.setAccessible(true);
             method.invoke(target,targetType);
         } catch (IllegalAccessException e) {

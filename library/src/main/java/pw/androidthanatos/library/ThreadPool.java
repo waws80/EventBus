@@ -9,14 +9,12 @@ import java.util.concurrent.Executors;
  * 作用： 线程池
  */
 
-public class ThreadPool  {
+ class ThreadPool  {
     /**
      * 线程数为当前手机的cpu数量
      */
     private static  int DEFAULT_THREAD_COUNT=Runtime.getRuntime().availableProcessors();
 
 
-    public static ExecutorService init(){
-        return Executors.newFixedThreadPool(DEFAULT_THREAD_COUNT);
-    }
+     static ExecutorService init(){return Executors.newFixedThreadPool(DEFAULT_THREAD_COUNT);}
 }

@@ -16,13 +16,7 @@ public class SecondActivity extends AppCompatActivity {
     }
 
     public void post(View cv){
-        new Thread(){
-            @Override
-            public void run() {
-                super.run();
-                EventBus.getDefault().post("我是第二个activity的子线程发送的字符串");
-            }
-        }.start();
+        new Thread(()->EventBus.getDefault().post("我是第二个activity的子线程发送的字符串")).start();
 
     }
 
